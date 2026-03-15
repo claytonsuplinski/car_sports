@@ -298,7 +298,7 @@ JL.webgl.space_object.game.prototype.create_tiles = function( p ){
 JL.webgl.space_object.game.prototype.hit_tile = function( p ){
 	var tile = p.tile;
 
-	// tile.color_mag += 1; // Uncomment to test having tiles remove on one hit.
+	// tile.color_mag += 1; // Note: Uncomment to test having tiles remove on one hit.
 	tile.color_mag += 0.5;
 
 	tile.set_uniforms( 'frags_vec4', { color_add : tile.color.map( x => tile.color_mag * x ), } );
