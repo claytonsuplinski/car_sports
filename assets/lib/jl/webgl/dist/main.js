@@ -26611,6 +26611,9 @@ JL.webgl.space_object._car.prototype.__on_init = function( p ){
 
 	this.key_bindings.push( 'car' );
 
+	if( !p.ui_elements ) p.ui_elements = [];
+	p.ui_elements.push( 'mobile_car_controls' );
+
 	[ 'user' ].forEach(function( x ){ if( p[ x ] !== undefined ) this[ x ] = p[ x ]; }, this);
 
 	this.add_gl_filter({ name : 'cull_face' });
@@ -32689,12 +32692,12 @@ JL.webgl.ui.intermediate_loading.canvas_fade_in = function( duration, callback )
 JL.webgl.ui.key_bindings = {
 	bindings : {
 		car : [
-			{ name : "A"                                                  , hold : function(   ){ JL.webgl.active_camera.target.turn(                 0.5 ); }, up : function(){ JL.webgl.active_camera.target.stop_turning(); } },
-			{ name : "D" , controllers : { ps4 : 'L-H', vr_r : 'R-H',    }, hold : function( m ){ JL.webgl.active_camera.target.turn( ( m || 1 ) * -0.5 ); }, up : function(){ JL.webgl.active_camera.target.stop_turning(); } },
+			{ name : "A"                                                  , hold : function( m ){ JL.webgl.active_camera.target.turn(  0.5 * ( m !== undefined ? m : 1 ) ); }, up : function(){ JL.webgl.active_camera.target.stop_turning(); } },
+			{ name : "D" , controllers : { ps4 : 'L-H', vr_r : 'R-H',    }, hold : function( m ){ JL.webgl.active_camera.target.turn( -0.5 * ( m !== undefined ? m : 1 ) ); }, up : function(){ JL.webgl.active_camera.target.stop_turning(); } },
 			{ name : "E" , controllers : { ps4 : 'R1'                    }, hold : function(   ){ JL.webgl.active_camera.target.halt();              } },
 			{ name : "Q" , controllers : { ps4 : 'Logo'                  }, down : function(   ){ JL.webgl.active_camera.target.reset_orientation(); } },
-			{ name : "S" , controllers : { ps4 : 'L2' , vr_l : 'Trigger' }, hold : function(   ){ JL.webgl.active_camera.target.accelerate( -1 );    } },
-			{ name : "W" , controllers : { ps4 : 'R2' , vr_r : 'Trigger' }, hold : function(   ){ JL.webgl.active_camera.target.accelerate(  1 );    } },
+			{ name : "S" , controllers : { ps4 : 'L2' , vr_l : 'Trigger' }, hold : function( m ){ JL.webgl.active_camera.target.accelerate( -( m !== undefined ? m : 1 ) ); } },
+			{ name : "W" , controllers : { ps4 : 'R2' , vr_r : 'Trigger' }, hold : function( m ){ JL.webgl.active_camera.target.accelerate(  ( m !== undefined ? m : 1 ) ); } },
 			{ name : "F1", controllers : { ps4 : 'R-H',                  }, hold : function( m ){ JL.webgl.active_camera.rotate( 2 * ( m || 1 ), [0,1,0] ); } },
 			{ name : "F2", controllers : { ps4 : 'R-V',                  }, hold : function( m ){ JL.webgl.active_camera.rotate( 2 * ( m || 1 ), [1,0,0] ); } },
 		],
@@ -35088,6 +35091,127 @@ JL.webgl.ui.item.mobile_arrow_keys.ui_framework = function(){
 				'<i class="fa fa-caret-' + dir + '"/>' + 
 			'</div>';
 		}).join('') +
+	'</div>';
+};
+
+JL.webgl.ui.item.mobile_car_controls = function( p ){
+	this.init( p );
+};
+
+JL.webgl.ui.item.mobile_car_controls.css = `
+	.jl-webgl-mobile-car-controls{
+		position:fixed;
+		width :200px;
+		padding-bottom:8px;
+	}
+
+	.jl-webgl-mobile-car-controls div{
+		position:fixed;
+		width :35px;
+		height:35px;
+		border-radius:100px;
+		background:rgba(0, 88, 188, 0.4);
+		color:rgba(255,255,255,0.5);
+		border:1px solid rgba(78, 161, 255, 0.3);
+		text-align:center;
+		font-size:22px;
+		padding-top:5px;
+		margin:auto;
+		right:0;
+	}
+
+	.jl-webgl-mobile-car-controls .reset-car{
+		left:0;
+		right:0px;
+		bottom:50px;
+		padding:3px;
+	}
+
+	.jl-webgl-mobile-car-controls .reset-car i{
+		margin-top:6px;
+	}
+
+	.jl-webgl-mobile-car-controls .arrow-accel{
+		box-sizing:border-box;
+		right:70px;
+		bottom:25px;
+		padding:4px;
+		height:100px;
+	}
+
+	.jl-webgl-mobile-car-controls .arrow-turn{
+		box-sizing:border-box;
+		left:40px;
+		right:auto;
+		bottom:50px;
+		padding:4px;
+		width:100px;
+	}
+
+	.jl-webgl-mobile-car-controls .arrow-accel i,
+	.jl-webgl-mobile-car-controls .arrow-turn  i{
+		position:absolute;
+		pointer-events:none;
+	}
+
+	.jl-webgl-mobile-car-controls .fa-caret-up   { left:0;right:0;top   :0; }
+	.jl-webgl-mobile-car-controls .fa-caret-down { left:0;right:0;bottom:0; }
+	.jl-webgl-mobile-car-controls .fa-caret-left { top:5px;bottom:0;left :5px; }
+	.jl-webgl-mobile-car-controls .fa-caret-right{ top:5px;bottom:0;right:5px; }
+
+	@media only screen and (min-width : 801px) {
+		.jl-webgl-mobile-car-controls{
+			display:none;
+		}
+	}
+`;
+
+JL.webgl.ui.item.mobile_car_controls.ui_framework = function(){
+	var ui_info = this.ui_info || {};
+
+	var get_key = function( x ){ return 'JL.webgl.ui.keyboard.get(\'' + x + '\')'; };
+
+	var tc = function( x ){ return 'try{' + x + '} catch(e){}'; };
+
+	var v_mag = [
+		'var touch         = event.touches[0];',
+		'var ele_rect      = this.getBoundingClientRect();',
+		'var ele_center    = ele_rect.top + ele_rect.height / 2;',
+		'var center_offset = touch.clientY - ele_center;',
+		'var mag           = JL.functions.clamp( center_offset / ( ( ele_rect.top - ele_rect.bottom ) / 4 ), -1, 1 );',
+	].join(' ');
+
+	var h_mag = [
+		'var touch         = event.touches[0];',
+		'var ele_rect      = this.getBoundingClientRect();',
+		'var ele_center    = ele_rect.left + ele_rect.height / 2;',
+		'var center_offset = touch.clientX - ele_center;',
+		'var mag           = JL.functions.clamp( center_offset / ( ( ele_rect.right - ele_rect.left ) / 4 ), -1, 1 );',
+	].join(' ');
+
+	return '<div class="jl-webgl-mobile-car-controls">' +
+		'<div class="reset-car" ontouchend="JL.webgl.ui.keyboard.get(\'Q\').down();">' + 
+			'<i class="fa fa-refresh"></i>' +
+		'</div>' + 
+
+		'<div class="arrow-accel" ' + 
+			'ontouchstart="event.preventDefault();var k=JL.webgl.ui.keyboard.get(\'W\');' + tc('k.pressed= true;') + tc(v_mag+'k.hold(mag);') + '" ' + 
+			'ontouchmove ="event.preventDefault();var k=JL.webgl.ui.keyboard.get(\'W\');' + tc('k.pressed= true;') + tc(v_mag+'k.hold(mag);') + '" ' + 
+			'ontouchend  ="event.preventDefault();var k=JL.webgl.ui.keyboard.get(\'W\');' + tc('k.pressed=false;') + tc(      'k.up();') + '" ' + 
+			' >' + 
+			'<i class="fa fa-caret-up  "/>' + 
+			'<i class="fa fa-caret-down"/>' + 
+		'</div>' +
+
+		'<div class="arrow-turn" ' + 
+			'ontouchstart="event.preventDefault();var k=JL.webgl.ui.keyboard.get(\'D\');' + tc('k.pressed= true;') + tc(h_mag+'k.hold(mag);') + '" ' + 
+			'ontouchmove ="event.preventDefault();var k=JL.webgl.ui.keyboard.get(\'D\');' + tc('k.pressed= true;') + tc(h_mag+'k.hold(mag);') + '" ' + 
+			'ontouchend  ="event.preventDefault();var k=JL.webgl.ui.keyboard.get(\'D\');' + tc('k.pressed=false;') + tc(      'k.up();') + '" ' + 
+			' >' + 
+			'<i class="fa fa-caret-left "/>' + 
+			'<i class="fa fa-caret-right"/>' + 
+		'</div>' +
+
 	'</div>';
 };
 
