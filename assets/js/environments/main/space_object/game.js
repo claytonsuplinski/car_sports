@@ -32,6 +32,9 @@ JL.webgl.space_object.game.prototype._on_init = function( p ){
 	this.duration_in_seconds = this.duration * 60;
 	// this.duration_in_seconds = 15;
 
+	this.tile_hp = 1; // 2;
+	this.tile_color_delta = 0.75 / this.tile_hp;
+
 	// -- Initialize teams --
 
 	this.teams = [];
@@ -46,6 +49,8 @@ JL.webgl.space_object.game.prototype._on_init = function( p ){
 		}
 
 		s_o_args.side = ( t_i ? 1 : -1 );
+
+		s_o_args.is_user_team = !t_i;
 
 		if( t_i ) s_o_args.color = [ 1  , 0.2, 0.2 ];
 		else      s_o_args.color = [ 0.2, 0.4, 1   ];
@@ -298,8 +303,7 @@ JL.webgl.space_object.game.prototype.create_tiles = function( p ){
 JL.webgl.space_object.game.prototype.hit_tile = function( p ){
 	var tile = p.tile;
 
-	// tile.color_mag += 1; // Note: Uncomment to test having tiles remove on one hit.
-	tile.color_mag += 0.5;
+	tile.color_mag += this.tile_color_delta;
 
 	tile.set_uniforms( 'frags_vec4', { color_add : tile.color.map( x => tile.color_mag * x ), } );
 

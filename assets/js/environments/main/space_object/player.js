@@ -4,13 +4,21 @@ JL.webgl.space_object.player = JL.functions.inherit_class( function(){}, JL.webg
 		{ path : [ 'graphics_object_wheel' ], value : { default : 'simple_car_wheel', } },
 	],
 	_inputs : [
+		{ key : 'is_user', type : 'bool', },
 		// { key : 'on_finish', type : 'function' , optional : true, },
 	]
 } );
 
 JL.webgl.space_object.player.prototype.___on_init = function( p ){
-	// TODO : test
-	// this.add_per_frame_function(function(){ this.accelerate( 0.2 ); });
+	if( !this.is_user ){
+		this.add_per_frame_function(function(){ this.cpu_drive(); });
+	}
 
 	p.graphics_objects = [ JL.webgl.graphics_objects.simple_car_body ];
+};
+
+JL.webgl.space_object.player.prototype.cpu_drive = function(){
+	this.drive_toward_point({
+		point : this.parent_object.parent_object.ball.get_position(),
+	});
 };

@@ -127,6 +127,49 @@ JL.functions.vector_subtract = function( a, b ){
 	return output;
 };
 
+JL.functions.vector_rotate_2d = function( vector, val ){
+	var angle = this.constants.to_radians * val;
+
+	var cos = Math.cos( angle );
+	var sin = Math.sin( angle );
+
+	var val_x = vector[0];
+	var val_y = vector[1];
+	vector[0] = cos * val_x - sin * val_y;
+	vector[1] = sin * val_x + cos * val_y;
+
+	return vector;
+};
+
+JL.functions.vector_rotate_3d = function( vector, axis, val ){
+	var angle = this.constants.to_radians * val;
+
+	var cos = Math.cos( angle );
+	var sin = Math.sin( angle );
+
+	switch( axis ){
+		case 'x':
+			var val_y = vector[1];
+			var val_z = vector[2];
+			vector[1] = cos * val_y - sin * val_z;
+			vector[2] = sin * val_y + cos * val_z;
+			break;
+		case 'y':
+			var val_x = vector[0];
+			var val_z = vector[2];
+			vector[0] = cos * val_x + sin * val_z;
+			vector[2] = cos * val_z - sin * val_x;
+			break;
+		case 'z':
+			var val_x = vector[0];
+			var val_y = vector[1];
+			vector[0] = cos * val_x - sin * val_y;
+			vector[1] = sin * val_x + cos * val_y;
+			break;
+	}
+	return vector;
+};
+
 JL.functions.dot_product = function( a, b ){
 	var sum = 0;
 	for( var i = 0; i < a.length; i++ ) sum += a[i] * b[i];
@@ -10224,7 +10267,7 @@ JL.webgl.canvas = {};
 JL.webgl.canvas.create = function( name, id, p ){
 	var p = p || {};
 
-	if( p.width ) $( JL.webgl.html_parent ).append( '<canvas id="' + id + '" width="' + p.width + '" height="' + p.height + '" style="' + ( p.style || '' ) + '" oncontextmenu="return false;"></canvas>' );
+	if( p.width ) $( JL.webgl.html_parent ).append( '<canvas id="' + id + '" aria-label="Interactive 3D Content" width="' + p.width + '" height="' + p.height + '" style="' + ( p.style || '' ) + '" oncontextmenu="return false;"></canvas>' );
 
 	this[ name ]   = {};
 	this[ name ].c = document.getElementById( id );
@@ -17114,6 +17157,18 @@ JL.webgl.graphics_object._main.prototype._inputs = [
 			{ key : 'type'    , type : 'str'     , optional : true, },
 			{ key : 'z_index' , type : 'float'   , optional : true, },
 			{ key : 'format'  , type : 'dropdown', optional : true, options : [ 'video', 'sprite', 'sprite_animated', 'framebuffer', ], },
+			{ key : 'video'   , type : 'obj'     , optional : true,
+				structure : [
+					{ key : 'autoplay', type : 'bool', optional : true, },
+				],
+			},
+			{ key : 'sprite'  , type : 'obj'     , optional : true,
+				structure : [
+					{ key : 'cols', type : 'int', min : 1, },
+					{ key : 'rows', type : 'int', min : 1, },
+					{ key : 'trim', type : 'int', min : 0, optional : true, },
+				],
+			},
 			// 2026-03-11 - Including 'callback' was breaking Edit environment.json in some demos. 
 			// { key : 'callback', type : 'function', optional : true, },
 		],
@@ -18243,6 +18298,8 @@ JL.webgl.graphics_object._main.prototype.to_draw_arrays = function( p ){
 
                 this.draw_arrays = true;
         }
+
+	this.construct_draw_function();
 };
 
 JL.webgl.graphics_object._main.prototype.derive_vertex_extrema = function( this_v ){
@@ -18959,9 +19016,7 @@ JL.webgl.graphics_object._main.prototype.create_texture = function(filename, cal
 	return texture;
 };
 
-JL.webgl.graphics_object._main.prototype.create_video_texture = function( src, p ){
-	var self = this;
-
+JL.webgl.graphics_object._main.prototype.init_unconventional_texture = function(){
 	var texture = JL.webgl.gl.createTexture();
 	JL.webgl.gl.bindTexture( JL.webgl.gl.TEXTURE_2D, texture );
 
@@ -18970,6 +19025,14 @@ JL.webgl.graphics_object._main.prototype.create_video_texture = function( src, p
 	JL.webgl.gl.texParameteri( JL.webgl.gl.TEXTURE_2D, JL.webgl.gl.TEXTURE_WRAP_S, JL.webgl.gl.CLAMP_TO_EDGE );
 	JL.webgl.gl.texParameteri( JL.webgl.gl.TEXTURE_2D, JL.webgl.gl.TEXTURE_WRAP_T, JL.webgl.gl.CLAMP_TO_EDGE );
 	JL.webgl.gl.texParameteri( JL.webgl.gl.TEXTURE_2D, JL.webgl.gl.TEXTURE_MIN_FILTER, JL.webgl.gl.LINEAR );
+
+	return texture;
+};
+
+JL.webgl.graphics_object._main.prototype.create_video_texture = function( src, p ){
+	var self = this;
+
+	var texture = this.init_unconventional_texture();
 
 	texture.element = document.createElement('video');
 
@@ -18994,7 +19057,41 @@ JL.webgl.graphics_object._main.prototype.create_video_texture = function( src, p
 	texture.element.loop  = true;
 	texture.element.src   = src;
 
-	if( p.autoplay ) texture.play();
+	if( p.autoplay || p.video.autoplay ) texture.play();
+
+	return texture;
+};
+
+JL.webgl.graphics_object._main.prototype.create_sprite_texture = function( src, p ){
+	var self = this;
+
+	// TODO : test
+	// See s_o.particle_system.main for sprite animation code.
+
+	var texture = this.init_unconventional_texture();
+
+	// texture.element = document.createElement('video');
+
+	// texture.update = function(){
+	// 	if( this.is_playing ){
+	// 		JL.webgl.gl.bindTexture( JL.webgl.gl.TEXTURE_2D, this );
+	// 		JL.webgl.gl.texImage2D(  JL.webgl.gl.TEXTURE_2D, 0, JL.webgl.gl.RGBA, JL.webgl.gl.RGBA, JL.webgl.gl.UNSIGNED_BYTE, this.element );
+	// 	}
+	// };
+
+	// texture.play  = function(){ this.element.play();  };
+	// texture.pause = function(){ this.element.pause(); };
+
+	// texture.element.onplaying = function(){ texture.is_playing =  true; };
+	// texture.element.onpause   = function(){ texture.is_playing = false; };
+
+	// texture.element.onloadstart = function(){
+	// 	if( p.callback ) p.callback();
+	// }
+
+	// texture.element.src   = src;
+
+	// if( p.autoplay || p.video.autoplay ) texture.play();
 
 	return texture;
 };
@@ -19014,16 +19111,23 @@ JL.webgl.graphics_object._main.prototype.set_texture = function( filename, p ){
 
 	var type = p.type || 'main';
 
+	p.callback = JL.functions.concat_functions([ p.callback || function(){}, function(){ self.construct_draw_function(); } ])
+
 	if( p.video ){
-		var curr_callback = p.callback;
-		p.callback = function(){
+		p.callback = JL.functions.concat_functions([ function(){
 			if( !self.video_textures ) self.video_textures = [];
 			self.video_textures.push( self.texture[ type ] );
-
-			if( curr_callback ) curr_callback();
-		};
+		}, p.callback ])
 	}
 	else if( this.video_textures && !this.video_textures.length ) delete this.video_textures;
+
+	if( p.sprite ){
+		p.callback = JL.functions.concat_functions([ function(){
+			if( !self.sprite_textures ) self.sprite_textures = [];
+			self.sprite_textures.push( self.texture[ type ] );
+		}, p.callback ])
+	}
+	else if( this.sprite_textures && !this.sprite_textures.length ) delete this.sprite_textures;
 
 	if( p.preset ){
 		this.texture[ type ] = p.preset;
@@ -19031,6 +19135,9 @@ JL.webgl.graphics_object._main.prototype.set_texture = function( filename, p ){
 	}
 	else if( p.video ){
 		this.texture[ type ] = this.create_video_texture( filename, p );
+	}
+	else if( p.sprite ){
+		this.texture[ type ] = this.create_sprite_texture( filename, p );
 	}
 	else if( JL.functions.is_canvas( filename ) ){
 		this.set_canvas_texture( Object.assign( { canvas : filename }, p ) );
@@ -19041,8 +19148,6 @@ JL.webgl.graphics_object._main.prototype.set_texture = function( filename, p ){
 	else{
 		this.texture[ type ] = this.create_texture( filename, p.callback );
 	}
-
-	this.construct_draw_function();
 };
 
 JL.webgl.graphics_object._main.prototype.load_textures = function( textures, callback ){
@@ -19191,76 +19296,6 @@ JL.webgl.graphics_object._main.prototype.set_uniforms = function( key, values ){
 	this[ key ] = JL.functions.recursive_assign( this[ key ] || {}, values );
 };
 
-JL.webgl.graphics_object._main.prototype.send_uniforms_to_shaders = function( space_object ){
-	var shdr = this.shader.program;
-
-	// TODO : Figure out why commenting the following chunk of code results in issues with the terrain in the Halloween demo.
-	// 	[after fixing above issue] if everything seems good with texture/uniform naming convention, delete the following chunk of code.
-	if( shdr.texture ){
-		var texture_names = Object.keys( this.texture );
-		for( var i = 0; i < texture_names.length; i++ ){
-			var texture_name = texture_names[ i ];
-
-			JL.webgl.gl.activeTexture( JL.webgl.gl[ "TEXTURE" + i ] );
-			JL.webgl.gl.bindTexture( JL.webgl.gl.TEXTURE_2D, this.texture[ texture_name ] );
-			JL.webgl.gl.uniform1i( shdr.texture[ texture_name ], i );
-		}
-	}
-
-	for( var shader_type of JL.webgl.shaders.uniforms.shaders ){
-		for( var var_type of JL.webgl.shaders.uniforms.vars ){
-			var type_key   = shader_type + '_' + var_type.name;
-			var shader_obj = shdr[ type_key ];
-			if( shader_obj ){
-				var vals = Object.assign( 
-					Object.assign( {}, this[ type_key ] || {} ), 
-					space_object[ type_key ] || {}
-				);
-
-				var shader_keys = Object.keys( shader_obj );
-				for( var value_idx = 0; value_idx < shader_keys.length; value_idx++ ){
-					var value_key = shader_keys[ value_idx ];
-					var v;
-					try{
-						v = var_type.derive[ value_key ]( space_object );
-					}
-					catch(e){
-						v = vals[ value_key ];
-						if( v === undefined ){
-							try{      v = var_type.custom_defaults[ value_key ]( space_object ); }
-							catch(e){ v = var_type.default; }
-						}
-					}
-					if( var_type.convert ) v = var_type.convert( v );
-					var_type.gl_call( shader_obj[ value_key ], v, value_key, this, value_idx );
-				}
-			}
-		}
-
-		for( var var_type of JL.webgl.shaders.uniforms.arrs ){
-			var type_key   = shader_type + '_' + var_type.name + '_arr';
-			var shader_obj = shdr[ type_key ];
-			if( shader_obj ){
-				for( var value_key of Object.keys( shader_obj ) ){
-					var v_list;
-					try{
-						v_list = var_type.get_arr[ value_key ]( space_object, this );
-					}
-					catch(e){
-						try{      v_list = var_type.custom_defaults[ value_key ]( space_object ); }
-						catch(e){ v_list = [ var_type.default ]; }
-					}
-
-					var val_list = ( v_list || [] );
-					for( var i = 0; i < val_list.length; i++ ){
-						var_type.gl_call( shader_obj[ value_key ][ i ], var_type.convert( val_list[ i ] ) );
-					}
-				}
-			}
-		}
-	}
-};
-
 JL.webgl.graphics_object._main.prototype.reload = function( p ){
 	var self = this;
 
@@ -19314,10 +19349,20 @@ JL.webgl.graphics_object._main.prototype.construct_draw_function = function( p )
 
 		fn_source.push( 'if( this.buffer ){', );
 
+			//--------------------------//
+			// Update animated textures //
+			//--------------------------//
+
 			if( this.video_textures ) fn_source.push( 'for( var t of this.video_textures ) t.update();' );
 
 			// TODO : test
-			// console.log( this.draw_arrays );
+			// 	-Try implementing create_sprite_texture function (similar to video)
+			//		-Maybe draw the section of sprite texture to a canvas element.
+			// 		-If I can get this implemented similar to how the video textures are implemented, I might be able to have multiple sprite textures on the same g_o.
+			if( this.sprite_textures ){
+				// fn_source.push( 'for( var t of this.video_textures ) t.update();' );
+				console.log( 'g_o.construct_draw sprite_textures : ' , this.sprite_textures );
+			}
 
 			//---------------------//
 			// Activate the Shader //
@@ -19329,68 +19374,121 @@ JL.webgl.graphics_object._main.prototype.construct_draw_function = function( p )
 			// 	2026-03-13 -- Restricting this line to only instanced / non-instanced g_o's broke things.
 			fn_source.push( 'JL.webgl.gl.bindVertexArray( this.shader.vao );' );
 
-			fn_source.push(
-				//---------------------------//
-				// Bind Attributes to Shader //
-				//---------------------------//
+			//---------------------------//
+			// Bind Attributes to Shader //
+			//---------------------------//
 
-				'for( var v of this.shader.attr ){',
-					'JL.webgl.gl.enableVertexAttribArray( this.shader.program.attr[v] );',
-					'JL.webgl.gl.bindBuffer( JL.webgl.gl.ARRAY_BUFFER, this.buffer[v] );',
-					'if( this.dynamic_buffers && this.dynamic_buffers.indexOf(v) != -1 ) JL.webgl.gl.bufferSubData( JL.webgl.gl.ARRAY_BUFFER, 0, new Float32Array( this[v] ), 0, this[v].length );',
-					'JL.webgl.gl.vertexAttribPointer( this.shader.program.attr[v], this.buffer[v].item_size, JL.webgl.gl.FLOAT, false, 0, 0 );',
-					'if( this.shader.instanced && this.shader.instanced.indexOf(v) != -1 ) JL.webgl.gl.vertexAttribDivisor( this.shader.program.attr[v], 1 );',
-				'}',
+			for( var v of this.shader.attr ){
+				fn_source.push(
+					'JL.webgl.gl.enableVertexAttribArray( this.shader.program.attr["'+v+'"] );',
+					'JL.webgl.gl.bindBuffer( JL.webgl.gl.ARRAY_BUFFER, this.buffer["'+v+'"] );',
+				);
+				
+				if( this.dynamic_buffers && this.dynamic_buffers.includes( v ) ) fn_source.push( 'JL.webgl.gl.bufferSubData( JL.webgl.gl.ARRAY_BUFFER, 0, new Float32Array( this["'+v+'"] ), 0, ' + this[v].length + ');' );
 
-				//-------------------------------//
-				// Send Uniform Values to Shader //
-				//-------------------------------//
+				fn_source.push( 'JL.webgl.gl.vertexAttribPointer( this.shader.program.attr[ "' + v + '"], this.buffer["' + v + '"].item_size, JL.webgl.gl.FLOAT, false, 0, 0 );' );
 
-				'this.send_uniforms_to_shaders( s_o );',
+				if( this.shader.instanced && this.shader.instanced.includes( v ) ) fn_source.push( 'JL.webgl.gl.vertexAttribDivisor( this.shader.program.attr["' + v + '"], 1 );' );
+			}
 
-				//-----------------//
-				// Draw the Object //
-				//-----------------//
+			//-------------------------------//
+			// Send Uniform Values to Shader //
+			//-------------------------------//
 
-				// TODO : test -- 2026-03-13 (see section below)
-				'if( this.draw_arrays ){',
-					'JL.webgl.gl.drawArrays(this.primitive, 0, this.num_items);',
-				'}',
-				'else if(this.buffer.vertex_indices){',
-					'JL.webgl.gl.bindBuffer(JL.webgl.gl.ELEMENT_ARRAY_BUFFER, this.buffer.vertex_indices);',
-					'if( this.dynamic_buffers && this.dynamic_buffers.indexOf("vertex_indices") != -1 ) JL.webgl.gl.bufferSubData( JL.webgl.gl.ELEMENT_ARRAY_BUFFER, 0, new Uint16Array( this.vertex_indices ) );',
+			var shdr = this.shader.program;
+			fn_source.push( 'var shdr = this.shader.program;' );
 
-					'if( this.shader.instanced ){',
-						'JL.webgl.gl.drawElementsInstanced( this.primitive, this.buffer.num_vertex_indices, JL.webgl.gl.UNSIGNED_SHORT, 0, this.num_instances );',
-					'}',
-					'else{',
-						'JL.webgl.gl.drawElements(          this.primitive, this.buffer.num_vertex_indices, JL.webgl.gl.UNSIGNED_SHORT, 0 );',
-					'};',
-				'}',
-			);
+			for( var shader_type of JL.webgl.shaders.uniforms.shaders ){
+				for( var v_i in JL.webgl.shaders.uniforms.vars ){
+					var var_type   = JL.webgl.shaders.uniforms.vars[ v_i ];
+					var type_key   = shader_type + '_' + var_type.name;
+					var shader_obj = shdr[ type_key ];
+					if( shader_obj ){
+						fn_source.push(
+							'var var_type   = JL.webgl.shaders.uniforms.vars[' + v_i + '];',
+							'var type_key   = "' + type_key + '";',
+							'var shader_obj = shdr[ type_key ];',
 
-			// TODO : test -- 2026-03-13
-			// 	-This worked with draw_arrays g_o's in Cloud Top Heights.
-			// 	-This didn't work with some building components in Edit env.
-			// 		-I'm guessing those g_o's have .draw_arrays set after this function is called.
-			// if( this.draw_arrays ) fn_source.push( 'JL.webgl.gl.drawArrays(this.primitive, 0, this.num_items);' );
-			// else{
-			// 	fn_source.push(
-			// 		// TODO : test
-			// 		'if(this.buffer.vertex_indices){',
-			// 		// 'else if(this.buffer.vertex_indices){',
-			// 			'JL.webgl.gl.bindBuffer(JL.webgl.gl.ELEMENT_ARRAY_BUFFER, this.buffer.vertex_indices);',
-			// 			'if( this.dynamic_buffers && this.dynamic_buffers.indexOf("vertex_indices") != -1 ) JL.webgl.gl.bufferSubData( JL.webgl.gl.ELEMENT_ARRAY_BUFFER, 0, new Uint16Array( this.vertex_indices ) );',
+							'var vals = Object.assign( ',
+								'Object.assign( {}, this[ type_key ] || {} ), ',
+								's_o[ type_key ] || {}',
+							');',
+						);
 
-			// 			'if( this.shader.instanced ){',
-			// 				'JL.webgl.gl.drawElementsInstanced( this.primitive, this.buffer.num_vertex_indices, JL.webgl.gl.UNSIGNED_SHORT, 0, this.num_instances );',
-			// 			'}',
-			// 			'else{',
-			// 				'JL.webgl.gl.drawElements(          this.primitive, this.buffer.num_vertex_indices, JL.webgl.gl.UNSIGNED_SHORT, 0 );',
-			// 			'};',
-			// 		'}',
-			// 	);
-			// }
+						var shader_keys = Object.keys( shader_obj );
+						for( var value_idx = 0; value_idx < shader_keys.length; value_idx++ ){
+							var value_key = shader_keys[ value_idx ];
+							fn_source.push(
+								'var v;',
+								'try{',
+									'v = var_type.derive["' + value_key + '"]( s_o );',
+								'}',
+								'catch(e){',
+									'v = vals["' + value_key + '"];',
+									'if( v === undefined ){',
+										'try{      v = var_type.custom_defaults["' + value_key + '"]( s_o ); }',
+										'catch(e){ v = var_type.default; }',
+									'}',
+								'}',
+							);
+							if( var_type.convert ) fn_source.push( 'v = var_type.convert( v );' );
+							fn_source.push(
+								'var_type.gl_call( shader_obj["' + value_key + '"], v, "' + value_key + '", this, ' + value_idx + ' );',
+							);
+						}
+					}
+				}
+
+				for( var v_i in JL.webgl.shaders.uniforms.arrs ){
+					var var_type   = JL.webgl.shaders.uniforms.arrs[ v_i ];
+					var type_key   = shader_type + '_' + var_type.name + '_arr';
+					var shader_obj = shdr[ type_key ];
+					if( shader_obj ){
+						fn_source.push(
+							'var var_type   = JL.webgl.shaders.uniforms.arrs[' + v_i + '];',
+							'var type_key   = "' + type_key + '";',
+							'var shader_obj = shdr[ type_key ];',
+						);
+
+						for( var value_key in shader_obj ){
+							fn_source.push(
+								'var v_list;',
+								'try{',
+									'v_list = var_type.get_arr["' + value_key + '"]( s_o, this );',
+								'}',
+								'catch(e){',
+									'try{      v_list = var_type.custom_defaults["' + value_key + '"]( s_o ); }',
+									'catch(e){ v_list = [ var_type.default ]; }',
+								'}',
+
+								'var val_list = ( v_list || [] );',
+								'for( var i = 0; i < val_list.length; i++ ){',
+									'var_type.gl_call( shader_obj["' + value_key + '"][ i ], var_type.convert( val_list[ i ] ) );',
+								'}',
+							);
+						}
+					}
+				}
+			}
+
+			//-----------------//
+			// Draw the Object //
+			//-----------------//
+
+			if( this.draw_arrays ) fn_source.push( 'JL.webgl.gl.drawArrays(this.primitive, 0, this.num_items);' );
+			else{
+				fn_source.push(
+					'if(this.buffer.vertex_indices){',
+						'JL.webgl.gl.bindBuffer(JL.webgl.gl.ELEMENT_ARRAY_BUFFER, this.buffer.vertex_indices);',
+				);
+
+				if( this.dynamic_buffers && this.dynamic_buffers.includes( "vertex_indices" ) ) fn_source.push( 'JL.webgl.gl.bufferSubData( JL.webgl.gl.ELEMENT_ARRAY_BUFFER, 0, new Uint16Array( this.vertex_indices ) );' );
+
+				if( this.shader.instanced ) fn_source.push( 'JL.webgl.gl.drawElementsInstanced( this.primitive, this.buffer.num_vertex_indices, JL.webgl.gl.UNSIGNED_SHORT, 0, this.num_instances );' );
+				else                        fn_source.push( 'JL.webgl.gl.drawElements(          this.primitive, this.buffer.num_vertex_indices, JL.webgl.gl.UNSIGNED_SHORT, 0 );' );
+
+				fn_source.push( '}' );
+			}
 
 		fn_source.push( '}' );
 
@@ -19401,64 +19499,6 @@ JL.webgl.graphics_object._main.prototype.construct_draw_function = function( p )
 
 // 2026-03-13 -- replacing with g_o.construct_draw_function
 JL.webgl.graphics_object._main.prototype.draw = function(){};
-// JL.webgl.graphics_object._main.prototype.draw = function( space_object ){
-// 	if( this.buffer ){
-// 
-// 		//-----------------------//
-// 		// Update Video Textures //
-// 		//-----------------------//
-// 
-// 		if( this.video_textures ){
-// 			for( var t of this.video_textures ) t.update();
-// 		}
-// 
-// 		//---------------------//
-// 		// Activate the Shader //
-// 		//---------------------//
-// 
-// 		this.shader.use();
-// 
-// 		// The "vao" stuff seems to be necessary to get everything to work with instancing. Not sure why or how this works. May need to re-visit / optimize down the road.
-// 		JL.webgl.gl.bindVertexArray( this.shader.vao );
-// 
-// 		//---------------------------//
-// 		// Bind Attributes to Shader //
-// 		//---------------------------//
-// 
-// 		for( var v of this.shader.attr ){
-// 			JL.webgl.gl.enableVertexAttribArray( this.shader.program.attr[v] );
-// 			JL.webgl.gl.bindBuffer( JL.webgl.gl.ARRAY_BUFFER, this.buffer[v] );
-// 			if( this.dynamic_buffers && this.dynamic_buffers.indexOf(v) != -1 ) JL.webgl.gl.bufferSubData( JL.webgl.gl.ARRAY_BUFFER, 0, new Float32Array( this[v] ), 0, this[v].length );
-// 			JL.webgl.gl.vertexAttribPointer( this.shader.program.attr[v], this.buffer[v].item_size, JL.webgl.gl.FLOAT, false, 0, 0 );
-// 			if( this.shader.instanced && this.shader.instanced.indexOf(v) != -1 ) JL.webgl.gl.vertexAttribDivisor( this.shader.program.attr[v], 1 );
-// 		}
-// 
-// 		//-------------------------------//
-// 		// Send Uniform Values to Shader //
-// 		//-------------------------------//
-// 
-// 		this.send_uniforms_to_shaders( space_object );
-// 
-// 		//-----------------//
-// 		// Draw the Object //
-// 		//-----------------//
-// 
-// 		if(this.draw_arrays){
-// 			JL.webgl.gl.drawArrays(this.primitive, 0, this.num_items);
-// 		}
-// 		else if(this.buffer.vertex_indices){
-// 			JL.webgl.gl.bindBuffer(JL.webgl.gl.ELEMENT_ARRAY_BUFFER, this.buffer.vertex_indices);
-// 			if( this.dynamic_buffers && this.dynamic_buffers.indexOf("vertex_indices") != -1 ) JL.webgl.gl.bufferSubData( JL.webgl.gl.ELEMENT_ARRAY_BUFFER, 0, new Uint16Array( this.vertex_indices ) );
-// 
-// 			if( this.shader.instanced ){
-// 				JL.webgl.gl.drawElementsInstanced( this.primitive, this.buffer.num_vertex_indices, JL.webgl.gl.UNSIGNED_SHORT, 0, this.num_instances );
-// 			}
-// 			else{
-// 				JL.webgl.gl.drawElements(          this.primitive, this.buffer.num_vertex_indices, JL.webgl.gl.UNSIGNED_SHORT, 0 );
-// 			};
-// 		}
-// 	}
-// };
 
 // Test : JL.webgl.graphics_object.triangulate.get_vert_indices([10, 0, 0, 50, 60, 60, 70, 10]);
 // 	Output : [ 1, 0, 3, 3, 2, 1 ]
@@ -26729,12 +26769,53 @@ JL.webgl.space_object._car.prototype.turn = function( mag ){
 	else if( this.steer_val < -this.steer_limit ) this.steer_val = -this.steer_limit;
 };
 
+JL.webgl.space_object._car.prototype.set_turn = function( val ){
+	this.steer_val = JL.functions.clamp( val, -this.steer_limit, this.steer_limit );
+};
+
+JL.webgl.space_object._car.prototype.set_turn_by_percent = function( pct ){
+	this.set_turn( this.steer_limit * pct );
+};
+
 JL.webgl.space_object._car.prototype.stop_turning = function(){
 	this.steer_val = 0;
 };
 
 JL.webgl.space_object._car.prototype.halt = function(){
 	this.brake_val = this.max_brake_val;
+};
+
+JL.webgl.space_object._car.prototype.drive_toward_point = function( p ){
+	var pos     = this.get_position();
+	var forward = this.get_forward_direction();
+	var dirs    = [ [ 1, forward ], [ -1, JL.functions.scalar_multiply( -1, forward ) ], ];
+
+	var d_min;
+	var min_dist = Infinity;
+	for( var d of dirs ){
+		var dist = JL.functions.distance_arrays( p.point, JL.functions.vector_add( pos, d[1] ) );
+		if( dist < min_dist ){
+			min_dist = dist;
+			d_min    = d;
+		}
+	}
+
+	var dest_vector = JL.functions.vector_subtract( p.point, pos );
+
+	var turn_angle = JL.functions.get_angle_between_2d({
+		v1     : [ d_min[1][0], d_min[1][2] ],
+		v2     : [ dest_vector[0], dest_vector[2] ],
+		center : [0,0,0],
+	});
+
+	while( turn_angle < -180 ) turn_angle += 360;
+	while( turn_angle >  180 ) turn_angle -= 360;
+
+	var turn_mag = JL.functions.clamp( d_min[0] * turn_angle / 40, -1, 1 );
+
+	this.accelerate( d_min[0] * ( 1 - ( 0.75 * turn_mag ) ) * JL.functions.random_number( 0.2, 0.4 ) );
+
+	this.set_turn( -0.8 * turn_mag );
 };
 
 JL.webgl.space_object._car.prototype.reset_orientation = function(){
@@ -26771,6 +26852,15 @@ JL.webgl.space_object._car.prototype.update_forces = function(){
 
 JL.webgl.space_object._car.prototype.get_world_transform = function(){
 	return this.collider.vehicle.getChassisWorldTransform();
+};
+
+JL.webgl.space_object._car.prototype.get_forward_direction = function(){
+	var dir = this.get_world_transform().getBasis().getRow();
+	return [
+		dir.z(),
+		dir.y(),
+		dir.x(),
+	];
 };
 
 JL.webgl.space_object._dynamic_sky = JL.functions.inherit_class( function(){}, JL.webgl.space_object._regular, {
@@ -35109,7 +35199,7 @@ JL.webgl.ui.item.mobile_car_controls.css = `
 		position:fixed;
 		width :35px;
 		height:35px;
-		border-radius:100px;
+		border-radius:10px;
 		background:rgba(0, 88, 188, 0.4);
 		color:rgba(255,255,255,0.5);
 		border:1px solid rgba(78, 161, 255, 0.3);
@@ -35121,9 +35211,8 @@ JL.webgl.ui.item.mobile_car_controls.css = `
 	}
 
 	.jl-webgl-mobile-car-controls .reset-car{
-		left:0;
-		right:0px;
-		bottom:50px;
+		right:140px;
+		bottom:40px;
 		padding:3px;
 	}
 
@@ -35133,19 +35222,20 @@ JL.webgl.ui.item.mobile_car_controls.css = `
 
 	.jl-webgl-mobile-car-controls .arrow-accel{
 		box-sizing:border-box;
-		right:70px;
+		right:55px;
 		bottom:25px;
 		padding:4px;
+		width:60px;
 		height:100px;
 	}
 
 	.jl-webgl-mobile-car-controls .arrow-turn{
 		box-sizing:border-box;
-		left:40px;
+		left:25px;
 		right:auto;
-		bottom:50px;
-		padding:4px;
-		width:100px;
+		bottom:30px;
+		padding:30px 4px;
+		width:120px;
 	}
 
 	.jl-webgl-mobile-car-controls .arrow-accel i,
@@ -35156,8 +35246,8 @@ JL.webgl.ui.item.mobile_car_controls.css = `
 
 	.jl-webgl-mobile-car-controls .fa-caret-up   { left:0;right:0;top   :0; }
 	.jl-webgl-mobile-car-controls .fa-caret-down { left:0;right:0;bottom:0; }
-	.jl-webgl-mobile-car-controls .fa-caret-left { top:5px;bottom:0;left :5px; }
-	.jl-webgl-mobile-car-controls .fa-caret-right{ top:5px;bottom:0;right:5px; }
+	.jl-webgl-mobile-car-controls .fa-caret-left { top:20px;bottom:0;left :5px; }
+	.jl-webgl-mobile-car-controls .fa-caret-right{ top:20px;bottom:0;right:5px; }
 
 	@media only screen and (min-width : 801px) {
 		.jl-webgl-mobile-car-controls{
@@ -35165,6 +35255,15 @@ JL.webgl.ui.item.mobile_car_controls.css = `
 		}
 	}
 `;
+
+JL.webgl.ui.item.mobile_car_controls.touch_in_bbox = function( t, bbox ){
+	return (
+		t.clientX >= bbox.left   &&
+		t.clientX <= bbox.right  &&
+		t.clientY >= bbox.top    &&
+		t.clientY <= bbox.bottom
+	);
+};
 
 JL.webgl.ui.item.mobile_car_controls.ui_framework = function(){
 	var ui_info = this.ui_info || {};
@@ -35174,20 +35273,34 @@ JL.webgl.ui.item.mobile_car_controls.ui_framework = function(){
 	var tc = function( x ){ return 'try{' + x + '} catch(e){}'; };
 
 	var v_mag = [
-		'var touch         = event.touches[0];',
-		'var ele_rect      = this.getBoundingClientRect();',
-		'var ele_center    = ele_rect.top + ele_rect.height / 2;',
-		'var center_offset = touch.clientY - ele_center;',
-		'var mag           = JL.functions.clamp( center_offset / ( ( ele_rect.top - ele_rect.bottom ) / 4 ), -1, 1 );',
+		'var is_touching = false;',
+		'var mag         = 0;',
+		'var ele_bbox    = this.getBoundingClientRect();',
+		'for( var t of event.touches ){',
+			'if( is_touching = JL.webgl.ui.item.mobile_car_controls.touch_in_bbox( t, ele_bbox ) ){',
+				'var ele_center    = ele_bbox.top + ( ele_bbox.height / 2 );',
+				'var center_offset = t.clientY - ele_center;',
+				'mag               = JL.functions.clamp( center_offset / ( ( ele_bbox.top - ele_bbox.bottom ) / 4 ), -1, 1 );',
+				'break;',
+			'}',
+		'}',
 	].join(' ');
 
 	var h_mag = [
-		'var touch         = event.touches[0];',
-		'var ele_rect      = this.getBoundingClientRect();',
-		'var ele_center    = ele_rect.left + ele_rect.height / 2;',
-		'var center_offset = touch.clientX - ele_center;',
-		'var mag           = JL.functions.clamp( center_offset / ( ( ele_rect.right - ele_rect.left ) / 4 ), -1, 1 );',
+		'var is_touching = false;',
+		'var mag         = 0;',
+		'var ele_bbox    = this.getBoundingClientRect();',
+		'for( var t of event.touches ){',
+			'if( is_touching = JL.webgl.ui.item.mobile_car_controls.touch_in_bbox( t, ele_bbox ) ){',
+				'var ele_center    = ele_bbox.left + ( ele_bbox.width / 2 );',
+				'var center_offset = t.clientX - ele_center;',
+				'mag               = JL.functions.clamp( center_offset / ( ( ele_bbox.right - ele_bbox.left ) / 4 ), -1, 1 );',
+				'break;',
+			'}',
+		'}',
 	].join(' ');
+
+	var tgt = 'JL.webgl.active_camera.target';
 
 	return '<div class="jl-webgl-mobile-car-controls">' +
 		'<div class="reset-car" ontouchend="JL.webgl.ui.keyboard.get(\'Q\').down();">' + 
@@ -35195,18 +35308,20 @@ JL.webgl.ui.item.mobile_car_controls.ui_framework = function(){
 		'</div>' + 
 
 		'<div class="arrow-accel" ' + 
-			'ontouchstart="event.preventDefault();var k=JL.webgl.ui.keyboard.get(\'W\');' + tc('k.pressed= true;') + tc(v_mag+'k.hold(mag);') + '" ' + 
-			'ontouchmove ="event.preventDefault();var k=JL.webgl.ui.keyboard.get(\'W\');' + tc('k.pressed= true;') + tc(v_mag+'k.hold(mag);') + '" ' + 
-			'ontouchend  ="event.preventDefault();var k=JL.webgl.ui.keyboard.get(\'W\');' + tc('k.pressed=false;') + tc(      'k.up();') + '" ' + 
+			'ontouchstart ="event.preventDefault();event.stopPropagation();' + v_mag+ 'if( is_touching ){' + tgt+'._mobile_car_accel_mag = mag;'+tgt+'.add_per_frame_function(function(){ this.accelerate( this._mobile_car_accel_mag ); }, { _name : \'_mobile_car_accel\' }); }' + '" ' + 
+			'ontouchmove  ="event.preventDefault();event.stopPropagation();' + v_mag+ 'if( is_touching ){' + tgt+'._mobile_car_accel_mag = mag;' + '}" ' + 
+			'ontouchend   ="event.preventDefault();event.stopPropagation();' +        tgt+'.remove_per_frame_functions({ _name : \'_mobile_car_accel\' }); delete '+tgt+'._mobile_car_accel_mag;' + '" ' + 
+			'ontouchcancel="event.preventDefault();event.stopPropagation();' +        tgt+'.remove_per_frame_functions({ _name : \'_mobile_car_accel\' }); delete '+tgt+'._mobile_car_accel_mag;' + '" ' + 
 			' >' + 
 			'<i class="fa fa-caret-up  "/>' + 
 			'<i class="fa fa-caret-down"/>' + 
 		'</div>' +
 
 		'<div class="arrow-turn" ' + 
-			'ontouchstart="event.preventDefault();var k=JL.webgl.ui.keyboard.get(\'D\');' + tc('k.pressed= true;') + tc(h_mag+'k.hold(mag);') + '" ' + 
-			'ontouchmove ="event.preventDefault();var k=JL.webgl.ui.keyboard.get(\'D\');' + tc('k.pressed= true;') + tc(h_mag+'k.hold(mag);') + '" ' + 
-			'ontouchend  ="event.preventDefault();var k=JL.webgl.ui.keyboard.get(\'D\');' + tc('k.pressed=false;') + tc(      'k.up();') + '" ' + 
+			'ontouchstart ="event.preventDefault();event.stopPropagation();' + h_mag+ 'if( is_touching ){' + tgt+'._mobile_car_turn_mag = mag;'+tgt+'.add_per_frame_function(function(){ this.set_turn_by_percent( -this._mobile_car_turn_mag ); }, { _name : \'_mobile_car_turn\' }); }' + '" ' + 
+			'ontouchmove  ="event.preventDefault();event.stopPropagation();' + h_mag+ 'if( is_touching ){' + tgt+'._mobile_car_turn_mag = mag; }' + '" ' + 
+			'ontouchend   ="event.preventDefault();event.stopPropagation();' + tgt+'.remove_per_frame_functions({ _name : \'_mobile_car_turn\' }); delete '+tgt+'._mobile_car_turn_mag; '+tgt+'.stop_turning();'  + '" ' + 
+			'ontouchcancel="event.preventDefault();event.stopPropagation();' + tgt+'.remove_per_frame_functions({ _name : \'_mobile_car_turn\' }); delete '+tgt+'._mobile_car_turn_mag; '+tgt+'.stop_turning();'  + '" ' + 
 			' >' + 
 			'<i class="fa fa-caret-left "/>' + 
 			'<i class="fa fa-caret-right"/>' + 

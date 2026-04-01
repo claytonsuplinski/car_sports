@@ -6,8 +6,9 @@ JL.webgl.space_object.team = JL.functions.inherit_class( function(){}, JL.webgl.
 	_inputs_exclude : [ 'draw_xyz', 'is_impostor', ].map( key => ({ key }) ),
 	_inputs : [
 		...JL.webgl.variables.team_inputs,
-		{ key : 'side' , type : 'int', default : 0, },
-		{ key : 'color', type : 'arr', length : 3, structure : { type : 'float', min : 0, max : 1, default : 0, }, },
+		{ key : 'side'        , type : 'int' , default : 0, },
+		{ key : 'color'       , type : 'arr' , length : 3, structure : { type : 'float', min : 0, max : 1, default : 0, }, },
+		{ key : 'is_user_team', type : 'bool', },
 		// { key : 'on_finish', type : 'function' , optional : true, },
 	]
 } );
@@ -31,6 +32,8 @@ JL.webgl.space_object.team.prototype._on_init = function( p ){
 			},
 			ui_elements : [ 'scoreboard', ],
 		};
+
+		if( this.is_user_team && !_ ) s_o_args.is_user = true;
 
 		var player = this.environment.add_space_object( s_o_args, JL.webgl.space_object.player );
 		this.players.push( player );
